@@ -1,0 +1,3 @@
+[submodule "glitcher_creature"]
+	path = glitcher_creature
+	url = git@github.com:lujji/glitcher_creature.git

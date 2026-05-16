@@ -1,0 +1,75 @@
+# stm8flash makefile
+#
+# Multiplatform support
+#   - Linux (x86, Raspian)
+#   - MacOS (Darwin)
+#   - Windows (e.g. mingw-w64-x86 with libusb1.0)
+
+
+PKG_CONFIG ?= pkg-config
+PLATFORM=$(shell uname -s)
+DEBUG=0
+
+# Pass RELEASE=anything to build without debug symbols
+ifneq (,$(strip $(RELEASE)))
+	BASE_CFLAGS := -O1
+else
+	BASE_CFLAGS := -g -O0 -DDEBUG=$(DEBUG)
+endif
+
+# Pass LIBUSB_QUIET=anything to Make to silence debug output from libusb.
+ifneq (,$(strip $(LIBUSB_QUIET)))
+	BASE_CFLAGS += -DSTM8FLASH_LIBUSB_QUIET
+endif
+
+BASE_CFLAGS += --std=gnu99 --pedantic -Wall
+
+ifeq ($(PLATFORM),Linux)
+	LIBS = `$(PKG_CONFIG) --libs libusb-1.0`
+	LIBUSB_CFLAGS = `$(PKG_CONFIG) --cflags libusb-1.0`
+else ifeq ($(PLATFORM),Darwin)
+	LIBS = $(shell $(PKG_CONFIG) --libs libusb-1.0)
+	LIBUSB_CFLAGS = $(shell $(PKG_CONFIG) --cflags libusb-1.0)
+	#MacOSSDK=$(shell xcrun --show-sdk-path)
+	#BASE_CFLAGS += -I$(MacOSSDK)/usr/include/ -I$(MacOSSDK)/usr/include/sys -I$(MacOSSDK)/usr/include/machine
+else ifeq ($(PLATFORM),FreeBSD)
+	LIBS = `$(PKG_CONFIG) --libs libusb-1.0`
+	LIBUSB_CFLAGS = `$(PKG_CONFIG) --cflags libusb-1.0`
+else
+# 	Generic case is Windows
+
+	LIBS   = -lusb-1.0
+	LIBUSB_CFLAGS =
+	CC	   = /mingw64/bin/gcc
+	BIN_SUFFIX =.exe
+endif
+
+# Respect user-supplied cflags, if any - just put ours in front.
+override CFLAGS := $(BASE_CFLAGS) $(LIBUSB_CFLAGS) $(CFLAGS)
+
+# Check if install DESTDIR is undefined
+ifndef DESTDIR
+	DESTDIR=/usr/local
+endif
+
+BIN 		=stm8flash
+OBJECTS 	=stlink.o stlinkv2.o main.o byte_utils.o ihex.o srec.o stm8.o
+
+
+.PHONY: all clean install
+
+$(BIN)$(BIN_SUFFIX): $(OBJECTS)
+	$(CC) $(CFLAGS) $(OBJECTS) $(LIBS) -o $(BIN)$(BIN_SUFFIX)
+
+all: $(BIN)$(BIN_SUFFIX)
+
+$(OBJECTS): $(wildcard *.h)
+
+
+clean:
+	-rm -f $(OBJECTS) $(BIN)$(BIN_SUFFIX)
+
+install: $(BIN)$(BIN_SUFFIX)
+	mkdir -p $(DESTDIR)/bin/
+	cp $(BIN)$(BIN_SUFFIX) $(DESTDIR)/bin/
+
