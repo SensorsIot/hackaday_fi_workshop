@@ -32,9 +32,11 @@ class Glitcher:
         '''
         if port is None:
             for i in serial.tools.list_ports.comports():
-                    if i.vid == self.USB_VID and i.pid == self.USB_PID and i.interface == "cli":
+                    if i.vid == self.USB_VID and i.pid == self.USB_PID:
                         port = i.device
-                        break
+                        if i.interface is None or i.interface == "cli":
+                            # None is a work-around for windows..
+                            break
             else:
                 raise Exception("Device not found")
         self.ser = serial.Serial(port, timeout=0.5)
