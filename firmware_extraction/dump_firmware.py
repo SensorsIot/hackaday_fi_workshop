@@ -1,24 +1,39 @@
 #!/usr/bin/env python3
-import time, subprocess
+import argparse
+import subprocess
+import time
+from pathlib import Path
+
 import rich.progress
 from glitcher import Glitcher
 
-STM8FLASH = 'stm8flash' # path to stm8flash
+DEFAULT_STM8FLASH = Path(__file__).resolve().parent.parent / 'stm8flash_win64' / 'stm8flash.exe'
 
 F_CPU   = 250e6
 RST_PIN = 29
 
 us = lambda v : int(v * 1e-6 * F_CPU)
 
-# TODO: adjust these parameters
-start   = us(0) # start of the sweep in microseonds
-stop    = us(0)
-pattern = 0b00000
+def parse_args():
+    parser = argparse.ArgumentParser(description='STM8 fault injection firmware extraction helper')
+    parser.add_argument('--port', help='Serial port for the glitcher control interface, e.g. COM114')
+    parser.add_argument('--stm8flash', default=str(DEFAULT_STM8FLASH), help='Path to stm8flash executable')
+    parser.add_argument('--start-us', type=float, default=0.0, help='Sweep start in microseconds')
+    parser.add_argument('--stop-us', type=float, default=0.0, help='Sweep stop in microseconds (exclusive)')
+    parser.add_argument('--step', type=int, default=1, help='Holdoff step in clock cycles')
+    parser.add_argument('--tries', type=int, default=1, help='Attempts per holdoff value')
+    parser.add_argument('--pattern', type=lambda v: int(v, 0), default=0b00000, help='Glitch pattern, e.g. 0b101 or 0x15')
+    return parser.parse_args()
 
-step = 1
-tries = 1
+args = parse_args()
+STM8FLASH = args.stm8flash
+start = us(args.start_us)
+stop = us(args.stop_us)
+step = args.step
+tries = args.tries
+pattern = args.pattern
 
-dev = Glitcher()
+dev = Glitcher(args.port)
 dev.set_freq(int(F_CPU))
 dev.set_pattern(pattern)
 dev.set_trigger_edge(0)
@@ -31,16 +46,15 @@ for key, value in settings.items():
 print()
 
 def read_flash():
-    cmd = f'{STM8FLASH} -c stlinkv2 -p stm8s003f3 -s flash -b 4 -r dump.bin'
-    return_code = subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    cmd = [STM8FLASH, '-c', 'stlinkv2', '-p', 'stm8s003f3', '-s', 'flash', '-b', '4', '-r', 'dump.bin']
+    return_code = subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if return_code == 0:
         with open('dump.bin', 'rb') as f:
             if f.read(4) != b'\x71\x71\x71\x71':
-                #cmd = f'{STM8FLASH} -c stlinkv2 -p stm8s003f3 -s opt -w opt_unlock.bin'
-                cmd = f'{STM8FLASH} -c stlinkv2 -p stm8s003f3 -s flash -b 8192 -r dump.bin'
-                return_code = subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                cmd = [STM8FLASH, '-c', 'stlinkv2', '-p', 'stm8s003f3', '-s', 'flash', '-b', '8192', '-r', 'dump.bin']
+                return_code = subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return True
-    elif return_code == 127:
+    elif return_code != 0 and not Path(STM8FLASH).exists():
         print('ERROR: stm8flash not found!')
         exit(-1)
     return False
@@ -60,7 +74,12 @@ with rich.progress.Progress(
     rich.progress.TextColumn('[bold cyan]{task.percentage:>3.0f}%'),
     rich.progress.TimeElapsedColumn(),
 ) as progress:
-    task = progress.add_task('glitching...', total=len(range(start, stop, step)), holdoff=start)
+    total = len(range(start, stop, step))
+    if total == 0:
+        print('No sweep to run. Increase --stop-us or adjust --start-us/--step.')
+        exit(1)
+
+    task = progress.add_task('glitching...', total=total, holdoff=start)
 
     for holdoff in range(start, stop, step):
         for t in range(tries):
