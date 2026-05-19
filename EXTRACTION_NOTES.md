@@ -74,6 +74,8 @@ The extracted image was verified in two ways:
 - The rebuilt binary matches the beginning of `dump.bin` exactly, byte-for-byte
 - The remaining bytes in `dump.bin` are zero-filled flash space
 
+To make this comparison reproducible without requiring a local SDCC installation, the rebuilt artifact `test_firmware/build/main.bin` is included in the repository.
+
 ## Notes
 
 - The original repository version of `dump_firmware.py` used `step = 1`, which means one holdoff cycle per increment.
